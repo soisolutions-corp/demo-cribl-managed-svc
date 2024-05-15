@@ -1,0 +1,7 @@
+redactFields: []
+redactLabel: null
+channels:
+  DEFAULT: info
+  input:DistMaster: debug
+  output:DistWorker: debug
+  collectors: debug
