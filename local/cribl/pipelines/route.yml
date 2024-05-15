@@ -11,7 +11,7 @@ routes:
     clones: []
     enableOutputExpression: false
     outputExpression: null
-    filter: sourcetype.indexOf("CriblLogs")>0
+    filter: source=="cribl:CriblLogs"
     output: splunk
   - id: DFOrBP
     name: Cribl Metrics
@@ -22,5 +22,5 @@ routes:
     clones: []
     enableOutputExpression: false
     outputExpression: null
-    filter: sourcetype.indexOf("CriblMetrics")>0
+    filter: sourcetype=="cribl:CriblMetrics"
     output: splunk

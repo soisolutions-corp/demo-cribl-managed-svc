@@ -8,8 +8,6 @@ replay:
   workerAffinity: false
   collector:
     conf:
-      parquetChunkSizeMB: 5
-      parquetChunkDownloadTimeout: 600
       awsAuthenticationMethod: manual
       signatureVersion: v4
       enableAssumeRole: false
@@ -28,7 +26,7 @@ replay:
         e8xWEHIXIu0Jt2C27n02av0YpA=="
       region: us-east-1
       bucket: "`engagement-62aca543.ps.soi.solutions`"
-      path: /${_time:%Y}/${_time:%m}/${_time:%d}/${_time:%H}/${sourcetype}/${customer}/${file}
+      path: ${_time:%Y}/${_time:%m}/${_time:%d}/${_time:%H}/${sourcetype}/${customer}/${file}
     destructive: false
     type: s3
   input:
