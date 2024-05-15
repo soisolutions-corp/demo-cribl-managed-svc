@@ -1,0 +1,39 @@
+output: default
+streamtags: []
+groups: {}
+asyncFuncTimeout: 1000
+functions:
+  - id: serde
+    filter: "true"
+    disabled: null
+    conf:
+      mode: extract
+      type: json
+      srcField: _raw
+      remove: []
+  - id: publish_metrics
+    filter: "true"
+    disabled: null
+    conf:
+      overwrite: false
+      dimensions:
+        - "!_*"
+        - "*"
+        - source
+        - sourcetype
+        - clientId
+        - _metric*
+        - host
+        - _time
+      removeMetrics: []
+      removeDimensions: []
+      fields:
+        - metricType: counter
+          inFieldName: _value
+          outFieldExpr: null
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - _raw
