@@ -1,0 +1,47 @@
+replay:
+  type: collection
+  ttl: 4h
+  removeFields: []
+  resumeOnBoot: false
+  schedule: {}
+  streamtags: []
+  workerAffinity: false
+  collector:
+    conf:
+      parquetChunkSizeMB: 5
+      parquetChunkDownloadTimeout: 600
+      awsAuthenticationMethod: manual
+      signatureVersion: v4
+      enableAssumeRole: false
+      durationSeconds: 3600
+      maxBatchSize: 10
+      recurse: true
+      reuseConnections: true
+      rejectUnauthorized: true
+      verifyPermissions: true
+      disableTimeFilter: false
+      assumeRoleArn: arn:aws:iam::992382378680:role/Cribl_Search_Role
+      assumeRoleExternalId: SOISolutions
+      extractors: []
+      awsApiKey: "`AKIA6ODUZMK4D3ERHOHV`"
+      awsSecretKey: "#42:p0DUlxxE41yHhHjWmPIvtgTZMrIgSnqk3EMH/na7DR9n0IlHcsP0Hk29yMJA\
+        e8xWEHIXIu0Jt2C27n02av0YpA=="
+      region: us-east-1
+      bucket: "`engagement-62aca543.ps.soi.solutions`"
+      path: /${_time:%Y}/${_time:%m}/${_time:%d}/${_time:%H}/${sourcetype}/${customer}/${file}
+    destructive: false
+    type: s3
+  input:
+    type: collection
+    staleChannelFlushMs: 10000
+    sendToRoutes: true
+    preprocess:
+      disabled: true
+    throttleRatePerSec: "0"
+    breakerRulesets:
+      - Cribl
+    metadata:
+      - name: __replayed
+        value: '"true"'
+  savedState: {}
+  notifications: []

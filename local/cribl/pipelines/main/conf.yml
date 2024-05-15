@@ -1,0 +1,13 @@
+functions:
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: index
+          value: '"main"'
+        - disabled: false
+          name: sourcetype
+          value: '"cribl:logs"'
+      remove: []
+groups: {}

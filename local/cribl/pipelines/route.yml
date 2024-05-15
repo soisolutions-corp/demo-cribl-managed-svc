@@ -1,0 +1,26 @@
+id: default
+groups: {}
+comments: []
+routes:
+  - id: aax0mu
+    name: Cribl Logs
+    final: true
+    disabled: false
+    pipeline: main
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: sourcetype.indexOf("CriblLogs")>0
+    output: splunk
+  - id: DFOrBP
+    name: Cribl Metrics
+    final: true
+    disabled: false
+    pipeline: cribl_metrics_rollup
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: sourcetype.indexOf("CriblMetrics")>0
+    output: splunk

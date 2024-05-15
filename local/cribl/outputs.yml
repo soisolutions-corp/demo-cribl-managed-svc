@@ -1,0 +1,57 @@
+outputs:
+  splunk:
+    systemFields:
+      - cribl_pipe
+    streamtags: []
+    port: 9997
+    nestedFields: none
+    throttleRatePerSec: "0"
+    connectionTimeout: 10000
+    writeTimeout: 60000
+    tls:
+      disabled: true
+    enableMultiMetrics: false
+    enableACK: true
+    logFailedRequests: false
+    maxS2Sversion: v3
+    onBackpressure: block
+    authType: manual
+    authToken: ""
+    type: splunk
+    host: 172.31.49.108
+  soi-solutions-ps-enagement-62aca543:
+    systemFields:
+      - cribl_pipe
+    streamtags: []
+    awsAuthenticationMethod: manual
+    signatureVersion: v4
+    reuseConnections: true
+    rejectUnauthorized: true
+    enableAssumeRole: false
+    durationSeconds: 3600
+    stagePath: $CRIBL_HOME/state/outputs/staging
+    addIdToStagePath: true
+    objectACL: private
+    removeEmptyDirs: true
+    partitionExpr: "`${C.Time.strftime(_time ? _time : Date.now()/1000,
+      '%Y/%m/%d/%H')}/${__inputId}/${host}`"
+    format: json
+    baseFileName: "`CriblOut`"
+    fileNameSuffix: '`.${C.env["CRIBL_WORKER_ID"]}.${__format}${__compression ===
+      "gzip" ? ".gz" : ""}`'
+    maxFileSizeMB: 32
+    maxOpenFiles: 1000
+    onBackpressure: block
+    maxFileOpenTimeSec: 300
+    maxFileIdleTimeSec: 30
+    maxConcurrentFileParts: 4
+    verifyPermissions: true
+    compress: gzip
+    emptyDirCleanupSec: 300
+    type: s3
+    bucket: "`engagement-62aca543.ps.soi.solutions`"
+    destPath: "''"
+    region: us-east-1
+    awsApiKey: "`AKIA6ODUZMK4D3ERHOHV`"
+    awsSecretKey: "#42:YLe1fyaIozKyAmqbt9011/xv3OWGHMqWyZ/HSZknjl6iL/zhYmTmpXJBogEX\
+      XyxA6oPczmepev0bgFUbJ9OiqA=="
