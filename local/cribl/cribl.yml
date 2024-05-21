@@ -8,4 +8,4 @@ git:
   timeout: 60000
   strictHostKeyChecking: false
   commitDeploySingleAction: false
-  remote: https://github.com/soisolutions-corp/demo-cribl-managed-svc.git
+  remote: git@github.com:soisolutions-corp/demo-cribl-managed-svc.git
