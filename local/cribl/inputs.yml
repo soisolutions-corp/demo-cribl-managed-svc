@@ -1,0 +1,21 @@
+inputs:
+  "5514":
+    disabled: false
+    sendToRoutes: true
+    pqEnabled: false
+    streamtags: []
+    host: 0.0.0.0
+    maxBufferSize: 1000
+    ipWhitelistRegex: /.*/
+    timestampTimezone: local
+    singleMsgUdpPackets: false
+    enableProxyHeader: false
+    keepFieldsList: []
+    octetCounting: false
+    allowNonStandardAppName: false
+    tls:
+      disabled: true
+    enableLoadBalancing: false
+    type: syslog
+    udpPort: 5514
+    tcpPort: 5514
