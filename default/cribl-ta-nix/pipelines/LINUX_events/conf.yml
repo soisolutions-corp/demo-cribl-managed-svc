@@ -1,0 +1,352 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 3
+    description: applies to all events
+    disabled: false
+  UnR9Gf:
+    name: usersWithLoginPrivs
+    description: source=='usersWithLoginPrivs'
+    index: 5
+  npr94q:
+    name: Unix:* & Linux:*
+    description: /Unix:/.test(source) && /Linux:/.test(source)
+    index: 6
+  NKcGwt:
+    name: Post Processing Group - JSON
+    description: applies to all events
+    index: 8
+    disabled: true
+  nY1Iq5:
+    name: Reserialize into KV
+    description: formats events as csv and prepares them for aggregation
+    index: 9
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    groupId: 43xFAj
+  - id: regex_extract
+    filter: source=='time'
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /\n(?<_header>MS\s[\s\w\/]+)\n/
+      regexList:
+        - regex: /=+\n(?<events>[\\n\*\w\d\s\/\+\-\.\^\[\]]+)/
+    groupId: 43xFAj
+  - id: regex_extract
+    filter: source!='hardware' && source.indexOf('Unix:') == -1 &&
+      source!='Linux:SELinuxConfig' && source!='time'
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    groupId: 43xFAj
+    description: ^\s*(?<_header>[\w\s\-]+)\\n
+  - id: eval
+    filter: source=='time'
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: events
+        - name: _header
+          value: _header.replace(/\/IP\saddress/g,'')
+        - value: _header.replace(/Last\ssample/g,'Last_Sample')
+          name: _header
+        - name: _raw
+          value: _raw.replace(/\[\s*/g,',[')
+        - name: _raw
+          value: _raw.replace(/\]\s+/g,'],')
+        - name: _raw
+          value: _raw.replace(/\-\s+/g,'-')
+      remove:
+        - events
+    groupId: 43xFAj
+  - id: eval
+    filter: source!='hardware' && source.indexOf('Unix:') == -1 &&
+      source!='Linux:SELinuxConfig'
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: source!='hardware' && source.indexOf('Unix:') == -1 &&
+      source!='Linux:SELinuxConfig'
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^(\s+IPdropped|USER|USERNAME|\s+PID|Name|Filesystem|Proto|CPU|COMMAND|memTotalMB)/.test(_raw)
+      || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: source!='hardware' && source.indexOf('Unix:') == -1 &&
+      source!='Linux:SELinuxConfig'
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "processes, aggregates, and converts to json "
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |
+        data size reduction: (on 5 events)
+        ~66% raw event reduction, ~25% full event reduction
+    groupId: UnR9Gf
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |
+        no extra processing is needed for this data.
+    groupId: UnR9Gf
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        [Unix:Service]
+        data size reduction: (on 10 events)
+        ~33% raw event reduction, ~47% full event reduction
+
+        [Unix:Version]
+        data size reduction: (on 10 events)
+        ~13% raw event reduction, ~41% full event reduction
+
+        [Unix:Update]
+        data size reduction: (on 10 events / 30 minutes)
+        ~84% raw event reduction, ~93% full event reduction
+
+        [Unix:Uptime]
+        data size reduction: (on 10 events)
+        ~51% raw event reduction, ~50% full event reduction
+
+        [Linux:SELinuxConfig]
+        data size reduction: (on 10 events)
+        ~8% raw event reduction, ~37% full event reduction
+    groupId: npr94q
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: "Unix:Service events have a different structure that most of the other
+        splunk scripted inputs and requires us to extract the values
+        differently. "
+    groupId: npr94q
+  - id: serde
+    filter: "source.indexOf('Unix:') >= 0 || source.indexOf('Linux:') >= 0 "
+    disabled: false
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      delimChar: \t
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+      remove: []
+    groupId: npr94q
+  - id: eval
+    filter: "source.indexOf('Unix:') >= 0 || source.indexOf('Linux:') >= 0 "
+    disabled: false
+    conf:
+      remove:
+        - date_*
+        - timestartpos
+        - timeendpos
+    groupId: npr94q
+    description: remove extracted date fields
+  - id: eval
+    filter: source.indexOf('Unix:Service') >= 0
+    disabled: false
+    conf:
+      add:
+        - name: DESCRIPTION
+          value: DESCRIPTION.trim()
+      remove:
+        - date_*
+        - timestartpos
+        - timeendpos
+    groupId: npr94q
+    description: clean Unix:Service fields
+  - id: drop
+    filter: source.indexOf('Unix:Update') >= 0 && _raw.indexOf('package') == -1
+    disabled: false
+    conf: {}
+    groupId: npr94q
+    description: drop update event summaries
+  - id: aggregation
+    filter: source.indexOf('Unix:Update') >= 0
+    disabled: true
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 30m
+      aggregations:
+        - values(package).as('packages')
+        - distinct_count(package).as('unique_packages')
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - package_type
+        - source
+        - index
+        - host
+      add:
+        - name: sourcetype
+          value: "'Update:metric'"
+    groupId: npr94q
+    description: agg updates by package_type
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: converts events to json objects and drops index-time fields
+  - id: serialize
+    filter: source!='ps'
+    disabled: true
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!host"
+        - "!cribl_*"
+        - "!source"
+        - "!sourcetype"
+        - "!punct"
+        - "!timestamp"
+        - "!index"
+        - "*"
+      cleanFields: false
+    description: reformat raw as a json string
+    groupId: NKcGwt
+  - id: eval
+    filter: source!='ps'
+    disabled: true
+    conf:
+      add:
+        - value: JSON.parse(_raw)
+          name: _raw
+    description: convert json string into json object
+    groupId: NKcGwt
+  - id: comment
+    filter: "true"
+    disabled: true
+    conf:
+      comment: Enable Drop or Keep index-time fields - (Default Drop)
+    groupId: NKcGwt
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to kv pair structure and drops index-time fields
+    groupId: nY1Iq5
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_kv'
+        - name: sourcetype
+          value: sourcetype + '_kv'
+    groupId: nY1Iq5
+    description: add field to break on
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: kvp
+      fields:
+        - "!_*"
+        - "!host"
+        - "!source*"
+        - "!cribl*"
+        - "!index*"
+        - "!punct"
+        - "*"
+      dstField: _raw
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: nY1Iq5
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep: []
+      remove: []
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: Drop - Extracted fields [Toggle off to retain extracted fields]

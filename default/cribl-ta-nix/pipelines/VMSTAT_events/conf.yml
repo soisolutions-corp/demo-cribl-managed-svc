@@ -1,0 +1,232 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 3
+    description: extract table data for processing
+    disabled: false
+  W8QNxK:
+    name: Reserialize into KV pairs
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 12
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: "'memTotalMB   memFreeMB   memUsedMB  memFreePct  memUsedPct   pgPa\
+            geOut  swapUsedPct   pgSwapOut   cSwitches  interrupts       forks   \
+            processes     threads  loadAvg1mi  waitThreads    interrupts_PS    \
+            pgPageIn_PS    pgPageOut_PS'"
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^memTotalMB/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 10 events / 5 minutes)
+        ~69% raw event reduction, ~52% full event reduction
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - pgPageOut*
+        - pgPageIn*
+    description: "remove pgPageIn and pgPageOut fields "
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - loadAvg1mi
+        - interrupts
+    description: remove loadAvg1mi and interrupts fields
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - memUsedPct
+        - memFreePct
+    description: remove memUsedPct and memFreePct
+  - id: rename
+    filter: "true"
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename:
+        - currentName: cSwitches
+          newName: sys_cs
+        - newName: sys_in
+          currentName: interrupts_PS
+        - currentName: forks
+          newName: cpu_fork
+        - currentName: processes
+          newName: cpu_proc
+        - currentName: threads
+          newName: cpu_thread
+        - currentName: waitThreads
+          newName: cpu_wthread
+        - currentName: swapUsedPct
+          newName: swap_usedpct
+        - currentName: pgSwapOut
+          newName: swap_out
+      renameExpr: name.replace(/mem/g,'mem_')
+    description: rename fields to be closer to standard linux notation
+  - id: numerify
+    filter: "true"
+    disabled: null
+    conf:
+      format: none
+      ignoreFields: []
+      filterExpr: ""
+      digits: .nan
+    description: convert values to numbers
+  - id: eval
+    filter: cpu_wthread==0
+    disabled: false
+    conf:
+      remove:
+        - cpu_wthread
+    description: remove cpu_wthread field if it equals 0
+  - id: eval
+    filter: swap_out==0
+    disabled: false
+    conf:
+      remove:
+        - swap_out
+    description: remove swap_out field if it equals 0
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to kv pair structure and drops index-time fields
+    groupId: W8QNxK
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_kv'
+        - name: sourcetype
+          value: sourcetype + '_kv'
+    groupId: W8QNxK
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: kvp
+      fields:
+        - cpu_fork
+        - cpu_proc
+        - cpu_thread
+        - cpu_wthread
+        - sys_cs
+        - sys_in
+        - swap_out
+        - swap_usedpct
+        - mem_TotalMB
+        - mem_FreeMB
+        - mem_UsedMB
+      dstField: _raw
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as kv pairs
+    groupId: W8QNxK
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw*
+        - _raw
+        - source
+        - sourcetype
+        - index
+        - host
+        - cribl_breaker
+        - _time
+        - duration
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: Drop - Extracted fields [Toggle off to retain extracted fields]

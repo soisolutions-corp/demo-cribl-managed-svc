@@ -1,0 +1,282 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  wduSwV:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 13
+  sk2TdL:
+    name: "Re-stack CSV events "
+    description: Enable this if you disable the drop function
+    disabled: false
+    index: 14
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    description: "extract the header with regex: ^\\s*(?<_header>[\\w\\s\\-]+)\\\\n"
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __header
+          value: _header.trim().replace(/\s+/g,',')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^COMMAND/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Below is a description of all the fields in a LSOF event:
+        COMMAND - Name of the process
+        PID     - Process ID number
+        USER    - Username of the process's owner
+        FD      - file descriptor number of the file
+        TYPE    - type of node associated with the file
+        DEVICE  - device numbers, separated by commas for the given file
+        SIZE    - size in bytes for the given file
+        NODE    - node number for the given file
+        NAME    - name of the mount point and filesystem where the file resides
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "WARNING: lsof events are incredibly large, please be aware that they
+        can take a significant amount or resources and time to process. if
+        possible consider dropping all lsof events instead."
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 5 events / 5 minutes)
+        ~97% raw event reduction, ~97% full event reduction
+  - id: eval
+    filter: source=='lsof' && USER.match(/\d+/)
+    disabled: null
+    conf:
+      add:
+        - name: SUB_PID
+          value: USER
+        - name: SUB_CMD
+          value: FD
+        - name: USER
+          value: TYPE
+        - name: FD
+          value: DEVICE
+        - name: TYPE
+          value: SIZE
+        - name: DEVICE
+          value: NODE
+        - name: SIZE
+          value: NAME
+      remove:
+        - NODE
+        - NAME
+    description: fix broken data structure
+  - id: drop
+    filter: COMMAND=='splunkd'
+    disabled: false
+    conf: {}
+    description: drop all events from the splunkd process
+  - id: numerify
+    filter: "true"
+    disabled: null
+    conf:
+      format: none
+      ignoreFields: []
+      filterExpr: ""
+      digits: 0
+    description: convert strings to numbers
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: SIZE_KB
+          value: SIZE / 1024
+        - name: SIZE_KB
+          value: Math.round(SIZE_KB)
+    description: convert SIZE to KB
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: converts events to json objects and drops index-time fields
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: wduSwV
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_csv'
+        - name: sourcetype
+          value: sourcetype + '_csv'
+    groupId: wduSwV
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - COMMAND
+        - PID
+        - USER
+        - FD
+        - TYPE
+        - DEVICE
+        - SIZE
+        - NODE
+        - NAME
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: wduSwV
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: sk2TdL
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+        - _time
+        - source*
+        - __header
+    groupId: sk2TdL
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: __header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: update source and sourcetype. re-add header to _raw
+    groupId: sk2TdL
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep: []
+      remove: []
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

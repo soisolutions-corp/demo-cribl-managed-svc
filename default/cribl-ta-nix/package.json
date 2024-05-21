@@ -1,0 +1,1 @@
+{"name":"cribl-ta-nix","version":"1.0.1","author":"Alex Cain - Cribl","description":"this pack maps inputs from the Splunk addon for linux to clean up and restructure event and metric inputs","displayName":"Cribl Pack for Nix","tags":{"dataType":["logs"],"useCase":["reduction","filtering"]}}

@@ -1,0 +1,216 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  CnGnKI:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 8
+  ZHSjTO:
+    name: "Re-stack CSV events "
+    description: restacks all events into one csv table
+    disabled: false
+    index: 9
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    description: "extract the header with regex: ^\\s*(?<_header>[\\w\\s\\-]+)\\\\n"
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __header
+          value: _header.trim().replace(/\s+/g,',')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^Filesystem/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 5 events / 5 minutes)
+        ~93% raw event reduction, ~88% full event reduction
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      remove:
+        - Used
+    description: remove 'Used' field
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >
+        OPTIONAL: disable agg function below to send all events instead of 5m
+        roll-ups
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: CnGnKI
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - Filesystem
+        - Type
+        - Size
+        - Avail
+        - UsePct
+        - MountedOn
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: CnGnKI
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: ZHSjTO
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+        - source*
+        - _time
+        - __header
+    groupId: ZHSjTO
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: __header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: convert json string into json object
+    groupId: ZHSjTO
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep:
+        - _raw
+        - _time
+        - host
+        - index
+        - source*
+        - cribl_*
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

@@ -1,0 +1,300 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  Ge7MLm:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 14
+  2aDUqy:
+    name: "Re-stack CSV events "
+    description: restacks all events into one csv table
+    index: 15
+    disabled: false
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    description: "extract the header with regex: ^\\s*(?<_header>[\\w\\s\\-]+)\\\\n"
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __header
+          value: _header.trim().replace(/\s+/g,',')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    description: clean and split _header
+    groupId: 43xFAj
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^USER/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "processes, aggregates, and converts to json "
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >
+        data size reduction: (on 10 events / 5 minutes)
+
+        ~24% raw event reduction, ~25% full event reduction, multiple event reduction
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >-
+        Below is a description of all the fields in a PS event:
+
+        USER    - Username of the process's owner
+
+        PID     - Process ID number
+
+        PSR     - processor that the process is currently assigned to
+
+        pctCPU  - How much CPU the process is using
+
+        CPUTIME - Total CPU time used by the process since it started
+
+        pctMEM  - How much memory the process is using, as a percentage of the total RAM available
+
+        RSZ_KB  - Real memory usage, in KB
+
+        VSZ_KB  - Virtual memory usage, in KB
+
+        TTY     - Terminal associated with the process
+
+        S       - Process status code
+
+        ELAPSED - Time since the process started
+
+        COMMAND - Name of the process
+
+        ARGS    - Process's arguments or flags, if any
+  - id: drop
+    filter: /\[.+\]/.test(COMMAND)
+    disabled: false
+    conf: {}
+    description: drop kernel process events
+  - id: eval
+    filter: TTY=='??' || TTY=='?'
+    disabled: false
+    conf:
+      remove:
+        - TTY
+    description: remove TTY field when value is "??"
+  - id: eval
+    filter: PSR=='?'
+    disabled: false
+    conf:
+      remove:
+        - PSR
+    description: remove PSR field when value is "?"
+  - id: eval
+    filter: ARGS=='<noArgs>'
+    disabled: false
+    conf:
+      remove:
+        - ARGS
+    description: remove ARGS field when value is "<noArgs>"
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "Optional: Disable the below eval to keep the 'ARGS' field in the
+        events, doing so can potentially add a large volume of data back into
+        the event."
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      remove:
+        - ARGS
+    description: drop the 'ARGS' field entirely
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - USER
+        - PID
+        - PSR
+        - pctCPU
+        - CPUTIME
+        - pctMEM
+        - RSZ_KB
+        - VSZ_KB
+        - TTY
+        - S
+        - ELAPSED
+        - COMMAND
+        - ARGS
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a CSV list
+    groupId: Ge7MLm
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_csv'
+        - name: sourcetype
+          value: sourcetype + '_csv'
+        - name: header
+          value: __header
+      remove:
+        - S
+        - RSZ_KB
+        - pct*
+        - PID
+        - PSR
+        - USER
+        - VSZ_KB
+        - CPUTIME
+        - COMMAND
+        - ELAPSED
+        - ARGS
+        - punct
+        - timestamp
+        - cribl_breaker
+    groupId: Ge7MLm
+    description: set the new source and type for the data
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: 2aDUqy
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+        - source*
+        - _time
+        - __header
+    groupId: 2aDUqy
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: __header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,/g,'\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: update source and sourcetype. re-add header to _raw
+    groupId: 2aDUqy
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline processing duration

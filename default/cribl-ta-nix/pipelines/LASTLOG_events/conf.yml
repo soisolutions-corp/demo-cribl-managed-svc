@@ -1,0 +1,170 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  PPQPVT:
+    name: Reserialize into KV pairs
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 8
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: "'USERNAME                        FROM                            L\
+            ATEST'"
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^USERNAME/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |
+        data size reduction: (on 10 events)
+        ~64% raw event reduction, ~40% full event reduction
+  - id: rename
+    filter: "true"
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename:
+        - currentName: USERNAME
+          newName: USER
+        - currentName: LATEST
+          newName: LAST
+    description: shorten field names
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      add:
+        - name: LAST
+          value: "''"
+    description: convert date into MM/DD HH:MM
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to kv pair structure and drops index-time fields
+    groupId: PPQPVT
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: "'lastlog_kv'"
+        - name: sourcetype
+          value: "'lastlog_kv'"
+    groupId: PPQPVT
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: kvp
+      fields:
+        - USER
+        - FROM
+        - LAST
+      dstField: _raw
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as kv pairs
+    groupId: PPQPVT
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep:
+        - _raw*
+        - _raw
+        - source
+        - sourcetype
+        - index
+        - host
+        - cribl_breaker
+        - _time
+        - duration
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

@@ -17,10 +17,56 @@ routes:
     name: Cribl Metrics
     final: true
     disabled: false
-    pipeline: cribl_metrics_rollup
+    pipeline: my_metrics
     description: ""
     clones: []
     enableOutputExpression: false
     outputExpression: null
     filter: sourcetype=="cribl:CriblMetrics"
+    output: splunk
+  - id: 0RxR1x
+    name: Palo Alto Route
+    final: true
+    disabled: false
+    pipeline: pack:cribl-palo-alto-networks
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: (sourcetype=='pan:log' || sourcetype=='pan_log' ||
+      /^[^,]+,[^,]+,[^,]+,(THREAT|TRAFFIC|SYSTEM|CONFIG|HIPMATCH|CORRELATION|USERID|GLOBALPROTECT),/.test(_raw))
+    output: splunk
+  - id: C3qkCy
+    name: Cisco ASA
+    final: true
+    disabled: false
+    pipeline: pack:cribl-cisco-asa-cleanup
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: sourcetype=="cisco:asa" && _raw.indexOf('%ASA-')>-1
+    output: splunk
+  - id: kAuS4L
+    name: Cisco FTD
+    final: true
+    disabled: false
+    pipeline: pack:cribl-cisco-ftd-cleanup
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: (sourcetype=="cisco:asa" || source=="cisco:ftd") &&
+      _raw.indexOf('%FTD-')>-1
+    output: splunk
+  - id: yA6Bli
+    name: Nix
+    final: true
+    disabled: false
+    pipeline: pack:cribl-ta-nix
+    description: ""
+    clones: []
+    enableOutputExpression: false
+    outputExpression: null
+    filter: index=="nix"
     output: splunk

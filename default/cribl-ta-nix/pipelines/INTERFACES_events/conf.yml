@@ -1,0 +1,259 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  NKcGwt:
+    name: Reserialize into JSON
+    description: "OPTIONAL: formats events into json objects"
+    index: 14
+    disabled: true
+  HqIlOS:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 15
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - value: "'Name       MAC                inetAddr         inet6Addr                                  \
+            Collisions  RXbytes          RXerrors         RXdropped          TX\
+            bytes          TXerrors         TXdropped          Speed        Dup\
+            lex'"
+          name: _header
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^Name/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |
+        data size reduction: (on 5 events)
+        ~77% raw event reduction, ~59% full event reduction
+  - id: eval
+    filter: Collisions=='0'
+    disabled: null
+    conf:
+      remove:
+        - Collisions
+    description: if no collisions marked, drop the field
+  - id: eval
+    filter: TXdropped=='0'
+    disabled: null
+    conf:
+      remove:
+        - TXdropped
+    description: if no dropped TX marked, drop the field
+  - id: eval
+    filter: TXerrors=='0'
+    disabled: null
+    conf:
+      remove:
+        - TXerrors
+    description: if no TX errors marked, drop the field
+  - id: eval
+    filter: RXdropped=='0'
+    disabled: null
+    conf:
+      remove:
+        - RXdropped
+    description: if no RX dropped marked, drop the field
+  - id: eval
+    filter: RXerrors=='0'
+    disabled: null
+    conf:
+      remove:
+        - RXerrors
+    description: if no RX errors marked, drop the field
+  - id: rename
+    filter: "true"
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename:
+        - currentName: inet6Addr
+          newName: IPv6
+        - currentName: inetAddr
+          newName: IPv4
+    description: change inet address fields to IPv4/6
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      add:
+        - name: TX_kb
+          value: Math.round(TXbytes / 1024)
+        - name: RX_kb
+          value: Math.round(RXbytes / 1024)
+      remove:
+        - RXbytes
+        - TXbytes
+    description: convert byte counts to kb
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        if you prefer json object events switch the re-serialize groups
+
+        WARNING: changing the serialization to json will result in less
+  - id: serialize
+    filter: "true"
+    disabled: true
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!host"
+        - "!cribl_*"
+        - "!source"
+        - "!sourcetype"
+        - "!punct"
+        - "!timestamp"
+        - "!index"
+        - "*"
+      cleanFields: false
+    description: reformat raw as a json string
+    groupId: NKcGwt
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - value: JSON.parse(_raw)
+          name: _raw
+    description: convert json string into json object
+    groupId: NKcGwt
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: HqIlOS
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: "'interface_csv'"
+        - name: sourcetype
+          value: "'interface_csv'"
+    groupId: HqIlOS
+    description: add field to break on
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - Name
+        - MAC
+        - IPv4
+        - IPv6
+        - Collisions
+        - RX_kb
+        - RXerrors
+        - RXdropped
+        - TX_kb
+        - TXerrors
+        - TXdropped
+        - Speed
+        - Duplex
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: HqIlOS
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep:
+        - _raw
+        - _time
+        - host
+        - index
+        - source*
+        - cribl_*
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

@@ -1,0 +1,348 @@
+output: default
+groups:
+  IF9Gmi:
+    name: Drop and/or suppress
+    description: Pick neither, either, or both. Adjust suppression options as required
+    index: 4
+    disabled: true
+  JE4Inc:
+    name: Extract Fields
+    index: 9
+    description: Pull regex from asa_parse and extract the defined groups
+    disabled: false
+  1NQlC4:
+    name: Special cases and Exceptions
+    index: 10
+  498tsT:
+    name: "[Optional] GeoIP Lookup"
+    description: requires download and install of a GeoIP lookup DB (maxmind city
+      level is a popular one)
+    disabled: true
+    index: 12
+  sf9vO1:
+    name: Output Formatting Options
+    description: Pick either Splunk, OCSF or ECS chained pipelines
+    index: 14
+    disabled: false
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please see the README for how to use this pack
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >
+        Summary of work:
+
+        * Extract the asa_code
+
+        * If asa_code is in asa_drops.csv drop the event
+
+        * If asa_code is in asa_suppress.csv allow 1 event per some time window
+
+        * Trim _raw up to the %ASA string
+
+        * Extract fields for asa_codes în așa_parsing.csv
+
+        * GeoIP lookup (requires MaxMind or other geoip db)
+
+        * OUTPUT Formatting: send using Splunk-like fields, or send using ECS fields
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      add:
+        - name: asa_code
+          value: _raw.match(/%ASA-\S*-(\d+):/)[1]
+    description: Extract the ASA code
+  - id: eval
+    filter: "!asa_code"
+    disabled: false
+    conf:
+      add:
+        - name: _no_matches
+          value: "true"
+    final: true
+    description: If we can't match any ASA code, add no_matches and stop here
+  - id: drop
+    filter: C.Lookup('asa_drops.csv').match(asa_code)
+    disabled: true
+    conf: {}
+    final: true
+    groupId: IF9Gmi
+    description: If the code is present in the asa_drops lookup, we drop the event
+  - id: suppress
+    filter: C.Lookup('asa_suppress.csv').match(asa_code)
+    disabled: true
+    conf:
+      allow: 1
+      suppressPeriodSec: 30
+      dropEventsMode: true
+      maxCacheSize: 50000
+      cacheIdleTimeoutPeriods: 2
+      numEventsIdleTimeoutTrigger: 10000
+      keyExpr: asa_code
+    description: 1 event per 30 seconds per asa_code allowed through for matching events
+    groupId: IF9Gmi
+  - id: eval
+    filter: suppressCount
+    disabled: true
+    conf:
+      add:
+        - name: _raw
+          value: "`${_raw} repeated=${suppressCount}`"
+        - name: suppressCount
+          value: undefined
+    groupId: IF9Gmi
+    description: "Optional: Append suppressed count to _raw, and drop suppressCount ITF"
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Clean up, add some base fields
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: If you are not using any field extractions below, consider setting the
+        Final flag on this Eval
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.replace(/.*?%ASA-/,'%ASA-')
+        - name: product
+          value: "'ASA'"
+        - name: vendor
+          value: "'Cisco'"
+        - name: vendor_product
+          value: "'Cisco ASA'"
+    description: Trim everything leading up to the ASA code; add a few fields the
+      Splunk TA adds
+    final: false
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Pull regex from the lookup table, and extract fields
+  - id: lookup
+    filter: "true"
+    disabled: false
+    conf:
+      matchMode: exact
+      reloadPeriodSec: 60
+      addToEvent: false
+      inFields:
+        - eventField: asa_code
+          lookupField: asa_code
+      ignoreCase: false
+      file: asa_parsing.csv
+      outFields:
+        - lookupField: regex
+          eventField: __regex
+    groupId: JE4Inc
+    description: Lookup regex for the ASA code
+  - id: eval
+    filter: __regex
+    disabled: false
+    conf:
+      add:
+        - name: groups
+          value: _raw.match(__regex).groups
+        - name: _no_matches
+          value: groups == undefined
+        - disabled: false
+          value: Object.assign(__e,groups)
+          name: ""
+      remove:
+        - groups
+    groupId: JE4Inc
+    description: Use resulting regex to extract fields, and clean up some
+  - id: rename
+    filter: "!_no_matches"
+    disabled: false
+    conf:
+      wildcardDepth: 5
+      baseFields: []
+      renameExpr: "name.endsWith('_ALT') ? name.replace(/_ALT$/,'').toLowerCase() : name"
+    description: Correct the fields with _ALT on the end
+    groupId: JE4Inc
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Some records will need src/dest reversed if direction is outbound
+    groupId: 1NQlC4
+  - id: eval
+    filter: direction.match(/outbound/i) &&
+      ['302013','302015','302020','302021','602303','602304','702307'].includes(asa_code)
+    disabled: null
+    conf:
+      add:
+        - disabled: false
+          name: switchit
+          value: "true"
+    description: set switchit if required
+    groupId: 1NQlC4
+  - id: rename
+    filter: switchit
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename: []
+      renameExpr: "name.startsWith('src_') ? name.replace('src_','NEWdest_') : name"
+    groupId: 1NQlC4
+    description: rename src_* to NEWdest_*
+  - id: rename
+    filter: switchit
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename: []
+      renameExpr: "name.startsWith('dest_') ? name.replace('dest_','src_') : name"
+    groupId: 1NQlC4
+    description: rename dest_* to src_*
+  - id: rename
+    filter: switchit
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename: []
+      renameExpr: "name.startsWith('NEWdest_') ? name.replace('NEWdest_','dest_') : name"
+    groupId: 1NQlC4
+    description: rename NEWdest_* to dest_*
+  - id: eval
+    filter: switchit
+    disabled: null
+    conf:
+      remove:
+        - switchit
+    groupId: 1NQlC4
+    description: drop switchit
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: '43000x are formatted in "Key: Value" pairings. Not in the regex file'
+    groupId: 1NQlC4
+  - id: regex_extract
+    filter: "['430001','430002','430003','430004','430005'].includes(asa_code)"
+    disabled: null
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /\s(?<_NAME_0>[^%:]+):\s(?<_VALUE_0>[^,]+)/g
+    groupId: 1NQlC4
+  - id: rename
+    filter: "['430001','430002','430003','430004','430005'].includes(asa_code)"
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      rename:
+        - currentName: DstIP
+          newName: dest_ip
+        - currentName: DstPort
+          newName: dest_port
+        - currentName: Protocol
+          newName: protocol
+        - currentName: SrcIP
+          newName: src_ip
+        - currentName: SrcPort
+          newName: src_port
+    final: false
+    groupId: 1NQlC4
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: optionally run a geoip lookup
+  - id: geoip
+    filter: src_ip || dest_ip
+    disabled: true
+    conf:
+      inField: src_ip
+      outField: src_geo
+      file: GeoLite2-City.mmdb
+      additionalFields:
+        - extraInField: dest_ip
+          extraOutField: dest_geo
+    groupId: 498tsT
+  - id: eval
+    filter: src_geo || dest_geo
+    disabled: true
+    conf:
+      remove:
+        - "*.names.de"
+        - "*.names.es"
+        - "*.names.fr"
+        - "*.names.ja"
+        - "*.names.pt-BR"
+        - "*.names.ru"
+        - "*.names.zh-CN"
+        - "*.geoname_id"
+        - "*.continent"
+        - "*.postal"
+        - "*.registered_country"
+        - "*.subdivisions"
+        - "*.country.names"
+        - "*.location.metro_code"
+        - "*.location.accuracy_radius"
+        - "*.location.time_zone"
+    groupId: 498tsT
+  - id: flatten
+    filter: src_geo || dest_geo
+    disabled: true
+    conf:
+      fields:
+        - src_geo
+        - dest_geo
+      prefix: ""
+      depth: 5
+      delimiter: _
+    groupId: 498tsT
+  - id: rename
+    filter: src_geo || dest_geo
+    disabled: true
+    conf:
+      wildcardDepth: 5
+      renameExpr: name.replace(/([^_]+)_.*_([^_]+)/,"$1_$2").replace(/code$/, "country")
+    groupId: 498tsT
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Choose your destination style
+  - id: chain
+    filter: "true"
+    disabled: true
+    conf:
+      processor: prep_for_ocsf
+    description: Send using OCSF format
+    groupId: sf9vO1
+  - id: chain
+    filter: "true"
+    disabled: false
+    conf:
+      processor: prep_for_splunk
+    groupId: sf9vO1
+    description: Sending to Splunk
+  - id: chain
+    filter: "true"
+    disabled: true
+    conf:
+      processor: prep_for_ECS
+    groupId: sf9vO1
+    description: Sending to Elastic
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf: {}
+    final: true
+    description: STOP HERE FOR DEBUGGING

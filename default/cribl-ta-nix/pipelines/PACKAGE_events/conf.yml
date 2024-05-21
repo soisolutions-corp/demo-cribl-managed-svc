@@ -1,0 +1,260 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 2
+    description: extract table data for processing
+    disabled: false
+  TYreeo:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 11
+  4vA6yz:
+    name: "Re-stack CSV events "
+    description: Enable this if you disable the drop function
+    index: 12
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces package.sh events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2022-2-10
+
+        Note:         Come find me on Cribl community's slack!
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    groupId: 43xFAj
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    groupId: 43xFAj
+    description: ^\s*(?<_header>[\w\s\-]+)\\n
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^(NAME)/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.replace(/el8\.?\_?\d\s/g,'el8  ')
+        - name: _raw
+          value: _raw.trim().split(/\s\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 5 events)
+        ~82% raw event reduction, ~82% full event reduction
+  - id: drop
+    filter: GROUP.match(/System Environment\/Base/)
+    disabled: null
+    conf: {}
+    description: drop system/base packages
+  - id: drop
+    filter: GROUP.match(/System Environment\/Kernel/)
+    disabled: null
+    conf: {}
+    description: drop system/kernal packages
+  - id: drop
+    filter: GROUP=='Development/Debuggers'
+    disabled: null
+    conf: {}
+    description: drop debugging tool events
+  - id: drop
+    filter: GROUP=='Applications/Archiving'
+    disabled: null
+    conf: {}
+    description: drop archiving tool events
+  - id: eval
+    filter: ARCH=='noarch' || ARCH=='(none)'
+    disabled: false
+    conf:
+      remove:
+        - ARCH
+    description: remove the ARCH field if the value is 'noarch' or '(none)'
+  - id: eval
+    filter: GROUP=='Unspecified'
+    disabled: false
+    conf:
+      remove: []
+      add:
+        - name: GROUP
+          value: "'Unknown'"
+    description: clean up group field values
+  - id: eval
+    filter: VENDOR=='(none)'
+    disabled: null
+    conf:
+      add:
+        - name: VENDOR
+          value: "'N/A'"
+    description: clean up vendor field values
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: TYreeo
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_csv'
+        - name: sourcetype
+          value: sourcetype + '_csv'
+    groupId: TYreeo
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - NAME
+        - VERSION
+        - RELEASE
+        - ARCH
+        - break
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: TYreeo
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: 4vA6yz
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+    groupId: 4vA6yz
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: "'Device,rReq,wReq,rKB,wKB,avgQueue,avgWait,avgSvc,bandwUtil,'"
+          name: _header
+        - value: _header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: update source and sourcetype. re-add header to _raw
+    groupId: 4vA6yz
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw*
+        - _raw
+        - source
+        - sourcetype
+        - index
+        - host
+        - cribl_breaker
+        - _time
+        - duration
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: Drop - Extracted fields [Toggle off to retain extracted fields]

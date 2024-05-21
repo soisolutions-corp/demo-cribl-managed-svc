@@ -1,0 +1,285 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  NKcGwt:
+    name: Reserialize into JSON
+    description: "OPTIONAL: formats events into json objects"
+    index: 10
+    disabled: true
+  mv1II2:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 11
+  IpMCQE:
+    name: "Re-stack CSV events "
+    description: Enable this if you disable the drop function
+    disabled: false
+    index: 12
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    description: "extract the header with regex: ^\\s*(?<_header>[\\w\\s\\-]+)\\\\n"
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __header
+          value: _header.trim().replace(/\s+/g,',')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^(Device.*)/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 5 events)
+        ~63% raw event reduction, ~52% full event reduction
+  - id: rename
+    filter: "true"
+    disabled: null
+    conf:
+      wildcardDepth: 5
+      renameExpr: name.replace(/_PS/g,'')
+      rename:
+        - currentName: avgQueueSZ
+          newName: avgQueue
+        - currentName: avgWaitMillis
+          newName: avgWait
+        - currentName: avgSvcMillis
+          newName: avgSvc
+        - currentName: bandwUtilPct
+          newName: BandwUtil
+    description: clean up the field names
+  - id: drop
+    filter: rKB=='0.00' && rReq=='0.00' && wKB=='0.00' && wReq=='0.00' &&
+      bandwUtil=='0.00'
+    disabled: null
+    conf: {}
+    description: drop empty records
+  - id: eval
+    filter: avgWait=='?'
+    disabled: null
+    conf:
+      remove:
+        - avgWait
+    description: if avgWait is '?' then remove the field
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        if you prefer json object events switch the re-serialize groups
+
+
+        WARNING: changing the serialization to json will result in a larger raw data size
+  - id: serialize
+    filter: "true"
+    disabled: true
+    conf:
+      type: json
+      dstField: _raw
+      fields:
+        - "!_*"
+        - "!host"
+        - "!cribl_*"
+        - "!source"
+        - "!sourcetype"
+        - "!punct"
+        - "!timestamp"
+        - "!index"
+        - "*"
+      cleanFields: false
+    description: reformat raw as a json string
+    groupId: NKcGwt
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - value: JSON.parse(_raw)
+          name: _raw
+    description: convert json string into json object
+    groupId: NKcGwt
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: mv1II2
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: "'interface_csv'"
+        - name: sourcetype
+          value: "'interface_csv'"
+    groupId: mv1II2
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - Device
+        - rReq
+        - wReq
+        - rKB
+        - wKB
+        - avgQueue
+        - avgWait
+        - avgSvc
+        - bandwUtil
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: mv1II2
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: Enable Drop or Keep index-time fields - (Default Drop)
+    groupId: IpMCQE
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: IpMCQE
+    description: add a field to break on
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+        - source*
+        - _time
+        - __header
+    groupId: IpMCQE
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: __header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: convert json string into json object
+    groupId: IpMCQE
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep: []
+      remove: []
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

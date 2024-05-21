@@ -1,0 +1,263 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 4
+    description: extract table data for processing
+    disabled: false
+  nTJlu7:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 13
+  NKcGwt:
+    name: "Re-stack CSV events "
+    description: restacks all events into one csv table (enable if you turn off the drop
+      functions)
+    index: 14
+    disabled: true
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    description: start a timer for the pipeline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /^\s*(?<_header>[\w\s\-]+)\n/
+    description: "extract the header with regex: ^\\s*(?<_header>[\\w\\s\\-]+)\\\\n"
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: "'CPU    pctUser    pctNice  pctSystem  pctIowait    pctIdle'"
+        - name: __header
+          value: _header.trim().replace(/\s+/g,',')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^CPU/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "processes, aggregates, and converts to json "
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        data size reduction: (on 10 events / 5 minutes)
+        ~94% raw event decrease, ~71% full event decrease
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        Below is a description of all the fields in the event:
+        CPU       - which cpu core is reporting or a summery of all
+        pctUser   - total CPU time spent by the user
+        pctNice   - total CPU time spent by NICE process
+        cpuSystem - total CPU time spent by the system
+        cpuIowait - total CPU time spent in IO ops wait
+        cpuIdle   - total CPU time spent in IDLE state
+  - id: numerify
+    filter: "true"
+    disabled: null
+    conf:
+      format: none
+      ignoreFields: []
+      filterExpr: ""
+      digits: 0
+    description: convert field values to numbers
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: "OPTIONAL: change or disable the drop function to get all CPU reports
+        instead of only the avg (default)"
+  - id: drop
+    filter: source=='cpu' && CPU!='all' && pctIdle>=30
+    disabled: true
+    conf: {}
+    description: drop individual CPU reports with idle >30%
+  - id: drop
+    filter: source=='cpu' && CPU!='all' && pctIdle>=50
+    disabled: true
+    conf: {}
+    description: drop individual CPU reports with idle >50%
+  - id: drop
+    filter: source=='cpu' && CPU!='all'
+    disabled: false
+    conf: {}
+    description: drop individual CPU reports, only keep total report
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: nTJlu7
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_csv'
+        - name: sourcetype
+          value: sourcetype + '_csv'
+    groupId: nTJlu7
+    description: add field to break on
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - CPU
+        - pctUser
+        - pctNice
+        - pctSystem
+        - pctIowait
+        - pctIdle
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: nTJlu7
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: NKcGwt
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: true
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+        - _time
+        - source*
+        - __header
+    groupId: NKcGwt
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourceype + '_alt'
+        - value: __header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,'\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: convert json string into json object
+    groupId: NKcGwt
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      keep:
+        - _raw
+        - _time
+        - host
+        - index
+        - source*
+        - cribl_*
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

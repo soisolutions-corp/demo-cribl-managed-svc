@@ -1,0 +1,214 @@
+output: default
+groups:
+  18qMBX:
+    name: Reserialize into KV
+    description: formats events as csv and prepares them for aggregation
+    disabled: false
+    index: 10
+  WZ1DJZ:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 11
+    disabled: true
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+        - name: _raw
+          value: _raw.replace(/\s\s+/g,'=')
+      remove: []
+    description: convert multiple spaces to equal signs
+  - id: serde
+    filter: "true"
+    disabled: null
+    conf:
+      mode: extract
+      type: kvp
+      srcField: _raw
+      cleanFields: false
+      delimChar: \t
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+      remove:
+        - KEY
+    description: extract kv pairs
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |
+        data size reduction: (on 5 events)
+        ~73% raw event reduction, ~53% full event reduction
+  - id: eval
+    filter: NIC_TYPE=='notAvailable'
+    disabled: null
+    conf:
+      remove:
+        - NIC_TYPE
+    description: drop NIC_TYPE field when no value
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      add:
+        - name: MEM_REAL_KB
+          value: MEMORY_REAL.replace('kB','')
+        - name: MEM_SWAP_KB
+          value: MEMORY_SWAP.replace('kB','')
+        - value: CPU_CACHE.replace('KB','')
+          name: CPU_CACHE_KB
+      remove:
+        - MEMORY_REAL
+        - MEMORY_SWAP
+        - CPU_CACHE
+    description: remove value key from values
+  - id: numerify
+    filter: "true"
+    disabled: null
+    conf:
+      format: none
+      ignoreFields: []
+      filterExpr: ""
+      digits: .nan
+    description: convert strings to numbers
+  - id: eval
+    filter: "true"
+    disabled: null
+    conf:
+      add:
+        - value: Math.round(MEM_REAL_KB / 1024)
+          name: MEM_REAL_MB
+        - value: Math.round(MEM_SWAP_KB / 1024)
+          name: MEM_SWAP_MB
+        - value: Math.round(CPU_CACHE_KB / 1024)
+          name: CPU_CACHE_MB
+    description: round converted values to nearest whole number
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: |-
+        if you prefer JSON events switch the reserialize groups
+
+        WARNING: JSON structure will only reduce raw log size by roughly 50%
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to kv pair structure and drops index-time fields
+    groupId: 18qMBX
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_kv'
+        - name: sourcetype
+          value: sourcetype + '_kv'
+    groupId: 18qMBX
+    description: add field to break on
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: kvp
+      fields:
+        - CPU_TYPE
+        - CPU_COUNT
+        - CPU_CACHE_MB
+        - HARD_DRIVES
+        - MEM_REAL_MB
+        - MEM_SWAP_MB
+        - NIC_COUNT
+        - NIC_TYPE
+      dstField: _raw
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: 18qMBX
+  - id: comment
+    filter: "true"
+    disabled: true
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: WZ1DJZ
+  - id: eval
+    filter: "true"
+    disabled: true
+    conf:
+      add:
+        - name: source
+          value: "'hardware_csv'"
+        - name: sourcetype
+          value: "'hardware_csv'"
+    groupId: WZ1DJZ
+    description: add field to break on
+  - id: serialize
+    filter: "true"
+    disabled: true
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - CPU_TYPE
+        - CPU_COUNT
+        - CPU_CACHE_MB
+        - HARD_DRIVES
+        - MEM_REAL_MB
+        - MEM_SWAP_MB
+        - NIC_COUNT
+        - NIC_TYPE
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: WZ1DJZ
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw*
+        - _time
+        - host
+        - index
+        - source*
+        - cribl_*
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: calculate pipeline duration

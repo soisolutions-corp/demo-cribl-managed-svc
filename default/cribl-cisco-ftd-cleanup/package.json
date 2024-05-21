@@ -1,0 +1,1 @@
+{"name":"cribl-cisco-ftd-cleanup","version":"1.1.14","author":"Jon Rust - Cribl","description":"Drop, Extract, Suppress based on certain FTD codes in lookup tables","displayName":"Cisco FTD","tags":{"streamtags":["ocsf","cim","ecs","ftd"],"dataType":["logs"],"useCase":["reduction","filtering","enrichment"],"technology":["cisco"]}}

@@ -1,0 +1,322 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 3
+    description: extract table data for processing
+    disabled: false
+  yUy0Y3:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 12
+  B4q9FR:
+    name: "Re-stack CSV events "
+    description: Enable this if you disable the drop function
+    index: 13
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    groupId: 43xFAj
+    description: start a timer for the pipeline
+  - id: regex_extract
+    filter: "true"
+    disabled: false
+    conf:
+      source: _raw
+      iterations: 100
+      overwrite: false
+      regex: /\n(?<_header>MS\s[\s\w\/]+)\n/
+      regexList:
+        - regex: /=+\n(?<events>[\\n\*\w\d\s\/\+\-\.\^\[\]]+)/
+    groupId: 43xFAj
+    description: extract the header and tabled events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: events
+        - name: _header
+          value: _header.replace(/\/IP\saddress/g,'')
+        - value: _header.replace(/Last\ssample/g,'Last_Sample')
+          name: _header
+        - name: _raw
+          value: _raw.replace(/\[\s*/g,',[')
+        - name: _raw
+          value: _raw.replace(/\]\s+/g,'],')
+        - name: _raw
+          value: _raw.replace(/\-\s+/g,'-')
+      remove:
+        - events
+    groupId: 43xFAj
+    description: massage the extracted header and events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: _raw.length=='0'
+    disabled: false
+    conf: {}
+    description: remove headers and empty events
+    groupId: 43xFAj
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Below is a description of all the fields in a this event:
+
+        Name    - NTP server
+
+        Stratum - how many hops away from a computer with an attached reference clock
+
+        Reach   - source’s reachability register printed as an octal number
+
+        Sample  - offset between the local clock and the source at the last measurement
+
+        Poll    - rate at which the source is being polled
+
+        Last    - offset between the local clock and the source at the last measurement
+
+        LastRx  - how long ago the last good sample was
+
+        MS      - indicates the mode (M) and selection state (S) of the source
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >+
+        data size reduction: (on 5 events / 5 minutes)
+
+        with drops enabled: ~>99% raw event reduction, ~>99% full event reduction
+
+        with drops disabled: ~62% raw event reduction, ~52% full event reduction
+
+  - id: regex_extract
+    filter: "true"
+    disabled: null
+    conf:
+      source: Last_Sample
+      iterations: 100
+      overwrite: false
+      regex: /^(?<adj_skew>[\d\+\-]+)(?<adj_skew_unit>[\w]+),\[(?<act_skew>[\d\+\-]+)(?<act_skew_unit>[\w]+)\],\+\/\-(?<err_margin>[\d]+)(?<err_margin_unit>[\w]+)/
+    description: break apart last_sample field
+  - id: drop
+    filter: /.(x|X|~|\?)/.test(MS)
+    disabled: null
+    conf: {}
+    description: drop any events that chrony considers unreliable
+  - id: numerify
+    filter: "true"
+    disabled: null
+    conf:
+      format: none
+      ignoreFields: []
+      filterExpr: ""
+      digits: .nan
+    description: convert values to numbers
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: act_skew_sec
+          value: "act_skew_unit=='ns' ? act_skew / 1e+9 : act_skew_sec"
+        - value: "act_skew_unit=='us' ? act_skew / 1e+6 : act_skew_sec"
+          name: act_skew_sec
+        - value: "act_skew_unit=='ms' ? act_skew / 1e+3 : act_skew_sec"
+          name: act_skew_sec
+        - name: adj_skew_sec
+          value: "adj_skew_unit=='ns' ? adj_skew / 1e+9 : adj_skew_sec"
+        - value: "adj_skew_unit=='us' ? adj_skew / 1e+6 : adj_skew_sec"
+          name: adj_skew_sec
+        - name: adj_skew_sec
+          value: "adj_skew_unit=='ms' ? act_skew / 1e+3 : adj_skew_sec"
+        - value: "err_margin_unit=='ns' ? err_margin / 1e+9 : err_margin_sec"
+          name: err_margin_sec
+        - value: "err_margin_unit=='us' ? err_margin / 1e+6 : err_margin_sec"
+          name: err_margin_sec
+        - value: "err_margin_unit=='ms' ? err_margin / 1e+3 : err_margin_sec"
+          name: err_margin_sec
+    description: convert skews to seconds
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: >
+        OPTIONAL: disable drop function below to send all events instead of
+        dropping events where skew +/- margin-of-error, crosses over 0
+  - id: drop
+    filter: adj_skew_sec+err_margin_sec>=0 && adj_skew_sec-err_margin_sec<=0
+    disabled: false
+    conf: {}
+    final: false
+    description: drop any result where skew +/- margin-of-error crosses absolute 0
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: yUy0Y3
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_csv'
+        - name: sourcetype
+          value: sourcetype + '_csv'
+    groupId: yUy0Y3
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - Name
+        - Stratum
+        - Reach
+        - adj_skew_sec
+        - err_margin_sec
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: yUy0Y3
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: B4q9FR
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+    groupId: B4q9FR
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: "'Name,Stratum,Reach,adj_skew_sec,err_margin_sec,'"
+          name: _header
+        - value: _header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: update source and sourcetype. re-add header to _raw
+    groupId: B4q9FR
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw*
+        - _raw
+        - source
+        - sourcetype
+        - index
+        - host
+        - cribl_breaker
+        - _time
+        - duration
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: Drop - Extracted fields [Toggle off to retain extracted fields]

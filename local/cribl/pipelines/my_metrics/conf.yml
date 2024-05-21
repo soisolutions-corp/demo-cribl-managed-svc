@@ -17,23 +17,26 @@ functions:
     conf:
       overwrite: false
       dimensions:
+        - "!index"
+        - cribl_wp
+        - "!cribl*"
         - "!_*"
         - "*"
-        - source
-        - sourcetype
-        - clientId
-        - _metric*
-        - host
-        - _time
       removeMetrics: []
       removeDimensions: []
       fields:
         - metricType: counter
           inFieldName: _value
-          outFieldExpr: null
+          outFieldExpr: __e['_metric']
   - id: eval
     filter: "true"
     disabled: null
     conf:
       remove:
         - _raw
+        - source
+        - sourcetype
+      add:
+        - disabled: false
+          name: index
+          value: '"metrics"'

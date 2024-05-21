@@ -1,0 +1,21 @@
+id: default
+groups: {}
+routes:
+  - id: 8dddSa
+    name: cisco_ftd_cleanup
+    final: true
+    disabled: false
+    pipeline: cisco_ftd_cleanup
+    description: ""
+    clones: []
+    filter: /\s%FTD-/.test(_raw)
+    output: default
+  - id: default
+    name: default
+    final: true
+    disabled: false
+    pipeline: devnull
+    description: ""
+    clones: []
+    filter: "true"
+    output: default

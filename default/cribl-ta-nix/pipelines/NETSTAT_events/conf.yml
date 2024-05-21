@@ -1,0 +1,236 @@
+output: default
+groups:
+  43xFAj:
+    name: Event Processing Group
+    index: 3
+    description: extract table data for processing
+    disabled: false
+  KDpMW0:
+    name: Reserialize into CSV
+    description: formats events as csv and prepares them for aggregation
+    index: 10
+  6gDx9u:
+    name: "Re-stack CSV events "
+    description: Enable this if you disable the drop function
+    index: 11
+asyncFuncTimeout: 1000
+functions:
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: >-
+        Description:  This pipeline reduces linux scripted events sent from
+        Splunk_TA_nix
+
+        Author:       Alex "asc-me" Cain - acain@cribl.io
+
+        Date:         2021-10-31
+
+        Note:         Come find me on Slack - https://cribl.io/community - cribl-community.slack.com
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: Please enable Descriptions - (Select top left three bars)
+  - id: comment
+    filter: "true"
+    disabled: null
+    conf:
+      comment: The Event Processing Group turns the _raw multi-line events into
+        single-line events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: __a_start
+          value: Date.now()
+    groupId: 43xFAj
+    description: start a timer for the pipeline
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - value: "'Proto  Recv-Q  Send-Q  LocalAddress                    ForeignAdd\
+            ress                  State'"
+          name: _header
+        - name: _header
+          value: _header.replace(/-/g,'')
+        - value: _header.trim().split(/\s+/)
+          name: _header
+    groupId: 43xFAj
+    description: clean and split _header
+  - id: unroll
+    filter: "true"
+    disabled: false
+    conf:
+      srcExpr: _raw.split(/\n/)
+      dstField: _raw
+    description: split log into events on "\n"
+    groupId: 43xFAj
+  - id: drop
+    filter: /^Proto/.test(_raw) || _raw.length=='0'
+    disabled: false
+    conf: {}
+    groupId: 43xFAj
+    description: remove headers and empty events
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw.trim().split(/\s+/)
+        - value: C.Misc.zip(_header,_raw,__e)
+          name: ""
+      remove:
+        - _header
+      keep: []
+    groupId: 43xFAj
+    description: clean up _raw and match with header
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: |-
+        data size reduction: (on 5 events / 5 minutes)
+        ~81% raw event reduction, ~79% full event reduction
+  - id: drop
+    filter: State=='<n/a>'
+    disabled: false
+    conf: {}
+    description: drop events that have no state
+  - id: drop
+    filter: "ForeignAddress.match(/0.0.0.0/) || ForeignAddress.match(/127.0.0.1/) "
+    disabled: false
+    conf: {}
+    description: "drop events where foreign address is: '0.0.0.0' or loopback"
+  - id: drop
+    filter: ForeignAddress.match(/\[::\]/) || ForeignAddress.match(/\*:\*/)
+    disabled: false
+    conf: {}
+    description: "drop events where foreign addres is: [::] or *:*"
+  - id: eval
+    filter: SendQ=='0'
+    disabled: null
+    conf:
+      remove:
+        - SendQ
+    description: drop SendQ when equal to 0
+  - id: eval
+    filter: RecvQ=='0'
+    disabled: null
+    conf:
+      remove:
+        - RecvQ
+    description: drop RecvQ when equal to 0
+  - id: comment
+    filter: "true"
+    disabled: false
+    conf:
+      comment: converts events to csv structure and drops index-time fields
+    groupId: KDpMW0
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: "'netstat_csv'"
+        - name: sourcetype
+          value: "'netstat_csv'"
+    groupId: KDpMW0
+    description: change source and sourcetype
+  - id: serialize
+    filter: "true"
+    disabled: false
+    conf:
+      type: csv
+      dstField: _raw
+      fields:
+        - Proto
+        - RecvQ
+        - SendQ
+        - LocalAddress
+        - ForeignAddress
+        - State
+      cleanFields: false
+      delimChar: ","
+      quoteChar: '"'
+      escapeChar: \
+      nullValue: "-"
+    description: reformat raw as a csv string
+    groupId: KDpMW0
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: _raw
+          value: _raw + ',break'
+    groupId: 6gDx9u
+    description: add a breaking key for restructure
+  - id: aggregation
+    filter: "true"
+    disabled: false
+    conf:
+      passthrough: false
+      preserveGroupBys: false
+      sufficientStatsOnly: false
+      metricsMode: false
+      timeWindow: 10s
+      aggregations:
+        - values(_raw).as(_raw)
+        - first(__a_start).as(__a_start)
+      cumulative: false
+      flushOnInputClose: true
+      groupbys:
+        - host
+        - index
+    groupId: 6gDx9u
+    description: restack events into a large table
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      add:
+        - name: source
+          value: source + '_alt'
+        - name: sourcetype
+          value: sourcetype + '_alt'
+        - value: "'Proto,RecvQ,SendQ,LocalAddress,ForeignAddress,State,'"
+          name: _header
+        - value: _header + '\n' + _raw
+          name: _raw
+        - name: _raw
+          value: _raw.replace(/,break,?/g,',\n')
+      remove:
+        - starttime
+        - endtime
+        - _header
+    description: update source and sourcetype. re-add header to _raw
+    groupId: 6gDx9u
+  - id: eval
+    filter: "true"
+    disabled: false
+    conf:
+      keep:
+        - _raw*
+        - _raw
+        - source
+        - sourcetype
+        - index
+        - host
+        - cribl_breaker
+        - _time
+        - duration
+      remove:
+        - "*"
+      add:
+        - name: __a_end
+          value: Date.now()
+        - name: __a_duration
+          value: __a_end - __a_start
+    description: Drop - Extracted fields [Toggle off to retain extracted fields]
